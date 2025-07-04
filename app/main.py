@@ -62,9 +62,10 @@ def match_profiles(request: MatchRequest):
 
             if score >= THRESHOLD:
                 matches.append({
+                    "score": score,
                     "entrepreneurID": e.userID,
-                    "investorID": i.userID,
-                    "score": score
+                    "investorID": i.userID
+                    
                 })
 
     # Skora göre sırala, en yüksek skorlu eşleşmeler en üstte
