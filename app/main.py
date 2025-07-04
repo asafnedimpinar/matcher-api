@@ -5,10 +5,10 @@ import numpy as np
 
 app = FastAPI()
 
+# Ağırlıklar ve normalize aralıklar
 WEIGHTS = np.array([14, 16, 24, 16, 17, 13])
 RANGES = [(1, 6), (7, 12), (13, 18), (19, 24), (25, 30), (31, 36)]
 THRESHOLD = 0.85
-MAX_MATCHES = 6
 
 class SectorDetails(BaseModel):
     investmentAmount: str
@@ -23,8 +23,8 @@ class Sector(BaseModel):
     details: SectorDetails
 
 class OrganizationProfile(BaseModel):
-    userID: str  # "1" = girişimci, "2" = yatırımcı
-    preference: int
+    userID: int       # kullanıcı ID
+    type: int         # 1: girişimci, 2: yatırımcı
     sectors: List[Sector]
 
 class MatchRequest(BaseModel):
@@ -49,11 +49,10 @@ def weighted_distance(vec1: np.ndarray, vec2: np.ndarray) -> float:
 
 @app.post("/match")
 def match_profiles(request: MatchRequest):
-    entrepreneurs = [p for p in request.profiles if p.userID == "1"]
-    investors = [p for p in request.profiles if p.userID == "2"]
+    entrepreneurs = [p for p in request.profiles if p.type == 1]
+    investors = [p for p in request.profiles if p.type == 2]
 
-    entrepreneur_match_map: Dict[int, List[Dict[str, Any]]] = {}
-    investor_match_map: Dict[int, List[Dict[str, Any]]] = {}
+    matches = []
 
     for e in entrepreneurs:
         e_vec = get_normalized_vector(e.sectors[0].details)
@@ -62,34 +61,14 @@ def match_profiles(request: MatchRequest):
             score = round(1 - weighted_distance(e_vec, i_vec), 4)
 
             if score >= THRESHOLD:
-                entrepreneur_match_map.setdefault(id(e), []).append({
-                    "id": id(i),
-                    "compatibilityScore": score
-                })
-                investor_match_map.setdefault(id(i), []).append({
-                    "id": id(e),
-                    "compatibilityScore": score
+                matches.append({
+                    "entrepreneurID": e.userID,
+                    "investorID": i.userID,
+                    "score": score
                 })
 
-    entrepreneur_result = [
-        {
-            "id": id(e),
-            "type": 1,
-            "matches": entrepreneur_match_map.get(id(e), [])
-        }
-        for e in entrepreneurs
-    ]
+    # Skora göre sırala, en yüksek skorlu eşleşmeler en üstte
+    matches.sort(key=lambda x: -x["score"])
 
-    investor_result = [
-        {
-            "id": id(i),
-            "type": 2,
-            "matches": investor_match_map.get(id(i), [])
-        }
-        for i in investors
-    ]
+    return matches
 
-    return {
-        "entrepreneurMatches": entrepreneur_result,
-        "investorMatches": investor_result
-    }
