@@ -8,7 +8,7 @@ app = FastAPI()
 # Ağırlıklar ve normalize aralıklar
 WEIGHTS = np.array([14, 16, 24, 16, 17, 13])
 RANGES = [(1, 6), (7, 12), (13, 18), (19, 24), (25, 30), (31, 36)]
-THRESHOLD = 0.85
+THRESHOLD = 85  # Eşik artık yüzde olarak
 
 class Sector(BaseModel):
     categoryId: int
@@ -17,7 +17,7 @@ class Sector(BaseModel):
 class Profile(BaseModel):
     userId: str
     organizationId: int
-    profileTypeId: int  # 1: girişimci, 2: yatırımcı
+    profileTypeId: int  # 1: yatırımcı, 2: girişimci
     sectors: List[Sector]
 
 @app.post("/match")
@@ -30,18 +30,19 @@ def match_profiles(profiles: List[Profile]):
     for e in entrepreneurs:
         for i in investors:
             if e.organizationId != i.organizationId:
-                continue  # Aynı organizasyon değilse geç
+                continue
 
-            # Normalize vektörleri hazırla
             e_vec = normalize_options(e.sectors[0].optionIds)
             i_vec = normalize_options(i.sectors[0].optionIds)
 
-            score = round(1 - weighted_distance(e_vec, i_vec), 4)
+            similarity = 1 - weighted_distance(e_vec, i_vec)
+            score = round(similarity * 100, 2)  # Skoru % formatına çevir
+
             if score >= THRESHOLD:
                 matches.append({
                     "score": score,
-                    "userId": i.userId,   # Investor
-                    "userId2": e.userId   # Entrepreneur
+                    "userId": i.userId,
+                    "userId2": e.userId
                 })
 
     matches.sort(key=lambda x: -x["score"])
