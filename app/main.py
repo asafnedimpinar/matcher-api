@@ -9,7 +9,7 @@ app = FastAPI()
 WEIGHTS = np.array([14, 16, 24, 16, 17, 13])
 RANGES = [(1, 6), (7, 12), (13, 18), (19, 24), (25, 30), (31, 36)]
 THRESHOLD = 85  # Skor eşiği yüzde olarak
-K = 3  # Her girişimci için en iyi K eşleşme sayısı
+K = 6  # Her girişimci için en iyi K eşleşme sayısı
 
 class Sector(BaseModel):
     categoryId: int
@@ -78,4 +78,3 @@ def normalize_options(option_ids: List[int]) -> np.ndarray:
 
 def normalize(value: int, min_val: int, max_val: int) -> float:
     return (value - min_val) / (max_val - min_val)
-```
