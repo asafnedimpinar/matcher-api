@@ -7,10 +7,10 @@ app = FastAPI()
 
 WEIGHTS = np.array([14, 16, 24, 16, 17, 13])
 RANGES = [(1, 6), (7, 12), (13, 18), (19, 24), (25, 30), (31, 36)]
-THRESHOLD = 60  # Artık daha geniş eşleşme yapacağı için eşik düşürüldü
-K = 6
+THRESHOLD = 60  # Eşik puanı
+K = 6  # En iyi K eşleşme
 
-MAX_DISTANCE = np.sqrt(np.sum(WEIGHTS))  # normalize edilmiş max uzaklık
+MAX_DISTANCE = np.sqrt(np.sum(WEIGHTS))  # normalize edilmiş maksimum uzaklık
 
 class Sector(BaseModel):
     categoryId: int
@@ -24,45 +24,66 @@ class Profile(BaseModel):
 
 @app.post("/match")
 def match_profiles(profiles: List[Profile]) -> List[Dict[str, Any]]:
-    entrepreneurs = [p for p in profiles if p.profileTypeId == 2]
-    investors = [p for p in profiles if p.profileTypeId == 1]
+    expanded_profiles = []
 
+    # Her sektörü ayrı profil gibi işliyoruz (userId aynı olabilir)
+    for profile in profiles:
+        for sector in profile.sectors:
+            expanded_profiles.append({
+                "userId": profile.userId,
+                "organizationId": profile.organizationId,
+                "profileTypeId": profile.profileTypeId,
+                "categoryId": sector.categoryId,
+                "optionIds": sector.optionIds
+            })
+
+    # Girişimcileri ve yatırımcıları ayır
+    entrepreneurs = [p for p in expanded_profiles if p["profileTypeId"] == 2]
+    investors = [p for p in expanded_profiles if p["profileTypeId"] == 1]
+
+    # Yatırımcı vektörlerini hazırla
     inv_data = []
     for inv in investors:
-        vec = normalize_options(inv.sectors[0].optionIds)
+        vec = normalize_options(inv["optionIds"])
         weighted_vec = vec * np.sqrt(WEIGHTS)
-        inv_data.append((inv.userId, inv.organizationId, weighted_vec))
+        inv_data.append((inv["userId"], inv["organizationId"], inv["categoryId"], weighted_vec))
 
     matches = []
     for ent in entrepreneurs:
-        candidates = [d for d in inv_data if d[1] == ent.organizationId]
+        ent_vec = normalize_options(ent["optionIds"]) * np.sqrt(WEIGHTS)
+
+        # Aynı organizasyondaki yatırımcıları filtrele
+        candidates = [d for d in inv_data if d[1] == ent["organizationId"]]
         if not candidates:
             continue
 
-        ent_vec = normalize_options(ent.sectors[0].optionIds) * np.sqrt(WEIGHTS)
-
         distances = []
-        for user_id, _, inv_vec in candidates:
+        for user_id, _, category_id, inv_vec in candidates:
             dist = np.linalg.norm(ent_vec - inv_vec)
-            distances.append((user_id, dist))
+            distances.append((user_id, category_id, dist))
 
-        distances.sort(key=lambda x: x[1])
+        distances.sort(key=lambda x: x[2])  # en yakınları seç
         top_k = distances[:min(K, len(distances))]
 
-        for user_id, dist in top_k:
-            # Normalize mesafe: 0 -> en iyi, MAX_DISTANCE -> en kötü
+        for user_id, category_id, dist in top_k:
             norm_dist = dist / MAX_DISTANCE
             similarity = 1 - norm_dist
-            score = round(similarity * 100, 2)
+            score = similarity * 100
+
+            # Kategori farkı varsa %20 düşür
+            if ent["categoryId"] != category_id:
+                score *= 0.8
+
+            score = round(score, 2)
 
             if score >= THRESHOLD:
                 matches.append({
-                    "score":score,
+                    "score": score,
                     "userId": user_id,
-                    "userId2": ent.userId
+                    "userId2": ent["userId"]
                 })
 
-    matches.sort(key=lambda x: -x['score'])
+    matches.sort(key=lambda x: -x['score'])  # skora göre sırala
     return matches
 
 def normalize_options(option_ids: List[int]) -> np.ndarray:
