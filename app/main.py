@@ -57,6 +57,7 @@ def match_profiles(profiles: List[Profile]) -> List[Dict[str, Any]]:
 
             if score >= THRESHOLD:
                 matches.append({
+                    "score":score,
                     "userId": user_id,
                     "userId2": ent.userId
                 })
