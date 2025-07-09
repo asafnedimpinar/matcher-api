@@ -8,7 +8,7 @@ app = FastAPI()
 # Sabitler
 WEIGHTS = np.array([14, 16, 24, 16, 17, 13])
 RANGES = [(1, 6), (7, 12), (13, 18), (19, 24), (25, 30), (31, 36)]
-THRESHOLD = 20
+THRESHOLD = 1
 K = 6
 MAX_DISTANCE = np.sqrt(np.sum(WEIGHTS))  # normalize edilmiş max uzaklık
 
