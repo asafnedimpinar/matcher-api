@@ -23,6 +23,20 @@ class Profile(BaseModel):
     profileTypeId: int
     sectors: List[Sector]
 
+# Yardımcı fonksiyonlar
+def normalize(value: int, min_val: int, max_val: int) -> float:
+    return (value - min_val) / (max_val - min_val)
+
+def normalize_options(option_ids: List[int]) -> np.ndarray:
+    # Her range için karşılık gelen option varsa normalize et, yoksa 0 koy
+    vec = []
+    for i, rng in enumerate(RANGES):
+        if i < len(option_ids):
+            vec.append(normalize(option_ids[i], rng[0], rng[1]))
+        else:
+            vec.append(0.0)
+    return np.array(vec)
+
 @app.post("/match")
 def match_profiles(profiles: List[Profile]) -> List[Dict[str, Any]]:
     expanded_profiles = []
@@ -51,7 +65,8 @@ def match_profiles(profiles: List[Profile]) -> List[Dict[str, Any]]:
 
     matches = []
     for ent in entrepreneurs:
-        ent_vec = normalize_options(ent["optionIds"]) * np.sqrt(WEIGHTS)
+        vec = normalize_options(ent["optionIds"])
+        ent_vec = vec * np.sqrt(WEIGHTS)
         ent_category = ent["categoryId"]
 
         # Aynı organizasyondaki yatırımcılar
@@ -95,13 +110,3 @@ def match_profiles(profiles: List[Profile]) -> List[Dict[str, Any]]:
 
     # Skora göre sırala
     return sorted(unique_matches.values(), key=lambda x: -x["score"])
-
-# Yardımcı fonksiyonlar
-def normalize_options(option_ids: List[int]) -> np.ndarray:
-    return np.array([
-        normalize(opt, rng[0], rng[1])
-        for opt, rng in zip(option_ids, RANGES)
-    ])
-
-def normalize(value: int, min_val: int, max_val: int) -> float:
-    return (value - min_val) / (max_val - min_val)
