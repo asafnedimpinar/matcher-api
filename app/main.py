@@ -5,14 +5,13 @@ import numpy as np
 
 app = FastAPI()
 
-# Sabitler
 WEIGHTS = np.array([14, 16, 24, 16, 17, 13])
 RANGES = [(1, 6), (7, 12), (13, 18), (19, 24), (25, 30), (31, 36)]
-THRESHOLD = 1
-K = 6
-MAX_DISTANCE = np.sqrt(np.sum(WEIGHTS))  # normalize edilmiş max uzaklık
+THRESHOLD = 60  # Eşik puanı
+K = 6  # En iyi K eşleşme
 
-# Veri modelleri
+MAX_DISTANCE = np.sqrt(np.sum(WEIGHTS))  # normalize edilmiş maksimum uzaklık
+
 class Sector(BaseModel):
     categoryId: int
     optionIds: List[int]
@@ -23,25 +22,11 @@ class Profile(BaseModel):
     profileTypeId: int
     sectors: List[Sector]
 
-# Yardımcı fonksiyonlar
-def normalize(value: int, min_val: int, max_val: int) -> float:
-    return (value - min_val) / (max_val - min_val)
-
-def normalize_options(option_ids: List[int]) -> np.ndarray:
-    # Her range için karşılık gelen option varsa normalize et, yoksa 0 koy
-    vec = []
-    for i, rng in enumerate(RANGES):
-        if i < len(option_ids):
-            vec.append(normalize(option_ids[i], rng[0], rng[1]))
-        else:
-            vec.append(0.0)
-    return np.array(vec)
-
 @app.post("/match")
 def match_profiles(profiles: List[Profile]) -> List[Dict[str, Any]]:
     expanded_profiles = []
 
-    # Her sektörü ayrı profil gibi yay
+    # Her sektörü ayrı profil gibi işliyoruz (userId aynı olabilir)
     for profile in profiles:
         for sector in profile.sectors:
             expanded_profiles.append({
@@ -52,7 +37,7 @@ def match_profiles(profiles: List[Profile]) -> List[Dict[str, Any]]:
                 "optionIds": sector.optionIds
             })
 
-    # Profilleri ayır
+    # Girişimcileri ve yatırımcıları ayır
     entrepreneurs = [p for p in expanded_profiles if p["profileTypeId"] == 2]
     investors = [p for p in expanded_profiles if p["profileTypeId"] == 1]
 
@@ -65,31 +50,28 @@ def match_profiles(profiles: List[Profile]) -> List[Dict[str, Any]]:
 
     matches = []
     for ent in entrepreneurs:
-        vec = normalize_options(ent["optionIds"])
-        ent_vec = vec * np.sqrt(WEIGHTS)
-        ent_category = ent["categoryId"]
+        ent_vec = normalize_options(ent["optionIds"]) * np.sqrt(WEIGHTS)
 
-        # Aynı organizasyondaki yatırımcılar
+        # Aynı organizasyondaki yatırımcıları filtrele
         candidates = [d for d in inv_data if d[1] == ent["organizationId"]]
         if not candidates:
             continue
 
         distances = []
-        for user_id, _, inv_category, inv_vec in candidates:
+        for user_id, _, category_id, inv_vec in candidates:
             dist = np.linalg.norm(ent_vec - inv_vec)
-            distances.append((user_id, inv_category, dist))
+            distances.append((user_id, category_id, dist))
 
-        # En yakın K yatırımcı
-        distances.sort(key=lambda x: x[2])
+        distances.sort(key=lambda x: x[2])  # en yakınları seç
         top_k = distances[:min(K, len(distances))]
 
-        for user_id, inv_category, dist in top_k:
+        for user_id, category_id, dist in top_k:
             norm_dist = dist / MAX_DISTANCE
             similarity = 1 - norm_dist
             score = similarity * 100
 
-            # Farklı kategori ise %20 ceza
-            if ent_category != inv_category:
+            # Kategori farkı varsa %20 düşür
+            if ent["categoryId"] != category_id:
                 score *= 0.8
 
             score = round(score, 2)
@@ -101,12 +83,14 @@ def match_profiles(profiles: List[Profile]) -> List[Dict[str, Any]]:
                     "userId2": ent["userId"]
                 })
 
-    # Aynı iki kullanıcı için sadece en iyi skoru tut
-    unique_matches = {}
-    for match in matches:
-        key = (match["userId"], match["userId2"])
-        if key not in unique_matches or match["score"] > unique_matches[key]["score"]:
-            unique_matches[key] = match
+    matches.sort(key=lambda x: -x['score'])  # skora göre sırala
+    return matches
 
-    # Skora göre sırala
-    return sorted(unique_matches.values(), key=lambda x: -x["score"])
+def normalize_options(option_ids: List[int]) -> np.ndarray:
+    return np.array([
+        normalize(opt, rng[0], rng[1])
+        for opt, rng in zip(option_ids, RANGES)
+    ])
+
+def normalize(value: int, min_val: int, max_val: int) -> float:
+    return (value - min_val) / (max_val - min_val)
